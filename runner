@@ -1,0 +1,80 @@
+#!/usr/bin/env bash
+
+# java -jar vendor/bin/JsTestDriver-1.3.5.jar --port=4224 --runnerMode DEBUG
+# java -jar vendor/bin/JsTestDriver-1.3.5.jar --tests all --config=app.conf --testOutput resports/ --reset=true --captureConsole --verbose
+
+# set paths
+self=${0#./}
+script=$(readlink -f $self)
+base=${script%/*}
+
+# set defaults
+debug=0
+port=4224
+config=${@: -1}
+tests="all" 
+opts_server=""
+opts_client=""
+logs="$base/logs"
+reports="$base/reports"
+runner="java -jar /usr/local/rmusic/qa/tools/javascript/jstestdriver/jstestdriver-1.3.5.jar"
+
+rm -rf "$logs"; mkdir -p "$logs"
+
+# set helpers
+usage () {
+    echo "Usage: $0 -p port [ -d debug -t tests ] /path/to/jstestdriver/main.conf" >&2
+    exit 1
+}
+
+# set finish
+log () {
+    echo "$1" >&2
+}
+
+# set init
+init() {
+    log "serving PID $(<"$logs/jstd.pid") on PORT $port"
+    $runner --config=$config --tests=$tests --testOutput=$reports --reset $opts_client &
+    wait $!; kill $(<"$logs/jstd.pid"); rm -f "$logs/jstd.pid"
+}
+
+# set setup
+setup () {
+    $runner --port=$port $opts_server &> "$logs/jstd.log" &
+    echo $! > "$logs/jstd.pid"
+    init
+    exit 0
+}
+
+# get options
+while getopts "p:t:d" opt; do
+    case "$opt" in
+        p) port=${OPTARG};;
+        t) tests=${OPTARG};;
+        d) debug=1;;
+        ?) log "Invalid option -$OPTARG"; usage;;
+        -*) usage;;
+    esac
+done
+
+# get configuration
+if [[ ! "$@" =~ ^.+?\.conf ]]; then
+    usage
+fi
+
+# confirm config is a regular file
+if [ ! -f "$config" ]; then
+    log "Invalid file $config"
+fi
+
+# enable debugging
+if [[ $debug == 1 ]]; then
+    log "serving $tests via $config" 
+    opts_server="--runnerMode=DEBUG"
+    opts_client="--captureConsole --verbose"
+fi
+
+setup
+
+exit 0
